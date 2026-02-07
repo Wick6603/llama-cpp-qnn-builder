@@ -4,6 +4,7 @@ _script_path=$(dirname "$(realpath "$0")")
 
 push_to_device=0
 benchmarks_only=0
+use_ggml_hexagon=1
 test_only=0
 revision=""
 subdirectory=""
@@ -19,19 +20,21 @@ Options:
 	-t                 Run tests only (skip perf/model/benchmarks block)
 	-r <revision>      Revision or label to append to log file names
 	-s <subdir>        Subdirectory under run_logs/ to place logs
+    -q                 Use hexagon-npu backend for tests and benchmarks
 	-h                 Show this help
 
 Behavior mirrors scripts/run_all_device_tests.ps1 using .sh helpers.
 EOF
 }
 
-while getopts ":pbtr:s:h" opt; do
+while getopts ":pbqtr:s:h" opt; do
     case $opt in
         p) push_to_device=1 ;;
         b) benchmarks_only=1 ;;
         t) test_only=1 ;;
         r) revision="$OPTARG" ;;
         s) subdirectory="$OPTARG" ;;
+        q) use_ggml_hexagon=0 ;;
         h) usage; exit 0 ;;
         :) echo "Error: Option -$OPTARG requires an argument" >&2; usage; exit 1 ;;
         \?) echo "Error: Invalid option -$OPTARG" >&2; usage; exit 1 ;;
@@ -58,26 +61,41 @@ if [[ -n "$subdirectory" ]]; then
     mkdir -p "${_script_path}/../run_logs/${subdirectory}"
 fi
 
+if [[ $use_ggml_hexagon -eq 0 ]]; then
+    backend_name="hexagon-npu"
+    backend_log_name="hexagon-npu"
+else
+    backend_name="HTP0"
+    backend_log_name="htp"
+fi
+
 if [[ $test_only -eq 0 ]]; then
     # Compose log file names (may have a trailing dot if revision is empty, matching ps1 behavior)
-    perf_log_name="test-backend-ops-perf-all.release.hexagon.${revision}"
-    model_test_log_name="llama-cli-test-llama3-1b-q4-hexagon-npu-fa-512-release.${revision}"
-    benchmark_log_name="llama-bench-batch-llama3-q4-hexagon-npu-release-no8bit.${revision}"
+    perf_log_name="test-backend-ops-perf-all.release.${backend_log_name}.${revision}"
+    llama_test_log_name="llama-completion-llama3-1b-q4-${backend_log_name}-512-release.${revision}"
+    qwen_test_log_name="llama-completion-qwen3-1.7b-q4-${backend_log_name}-512-release.${revision}"
+    benchmark_log_name="llama-bench-batch-llama3-q4-${backend_log_name}-release-no8bit.${revision}"
     
     perf_log_name=$(prefix_if_needed "$perf_log_name")
-    model_test_log_name=$(prefix_if_needed "$model_test_log_name")
+    llama_test_log_name=$(prefix_if_needed "$llama_test_log_name")
+    qwen_test_log_name=$(prefix_if_needed "$qwen_test_log_name")
     benchmark_log_name=$(prefix_if_needed "$benchmark_log_name")
     
     echo "Running device performance tests and saving log to ${perf_log_name}"
     "${_script_path}/run_all_tests_and_save_log.sh" \
-    -e "perf -b hexagon-npu" \
+    -e "perf -b ${backend_name}" \
     -l "${perf_log_name}"
     
-    echo "Running device model test and saving log to ${model_test_log_name}"
+    echo "Running device model test and saving log to ${llama_test_log_name}"
     "${_script_path}/run_device_model_test.sh" \
-    -f \
     -m "meta-llama_Meta-Llama-3.2-1B-Instruct-Q4_0.gguf" \
-    -l "${model_test_log_name}" \
+    -l "${llama_test_log_name}" \
+    -t 512
+
+    echo "Running device model test and saving log to ${qwen_test_log_name}"
+    "${_script_path}/run_device_model_test.sh" \
+    -m "qwen3-1.7b-bf16-Q4_0.gguf" \
+    -l "${qwen_test_log_name}" \
     -t 512
     
     echo "Running device benchmarks and saving log to ${benchmark_log_name}"
@@ -88,12 +106,12 @@ if [[ $test_only -eq 0 ]]; then
 fi
 
 if [[ $benchmarks_only -eq 0 ]]; then
-    test_log_name="test-backend-ops-all-release.hexagon.${revision}"
+    test_log_name="test-backend-ops-all-release.${backend_log_name}.${revision}"
     test_log_name=$(prefix_if_needed "$test_log_name")
     
     echo "Running device tests and saving log to ${test_log_name}"
     "${_script_path}/run_all_tests_and_save_log.sh" \
-    -e "test -b hexagon-npu" \
+    -e "test -b ${backend_name}" \
     -l "${test_log_name}"
 fi
 

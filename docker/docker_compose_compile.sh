@@ -17,9 +17,10 @@ _enable_hexagon_backend=1
 _hexagon_npu_only=0
 _qnn_only=0
 _disable_hexagon_and_qnn=0
-_use_ggml_hexagon=0
+_enable_ggml_hexagon=1
 _enable_dequant=0
 _enable_profiler=0
+_enable_ocl=0
 
 # Parse command-line arguments
 while (("$#")); do
@@ -53,14 +54,14 @@ while (("$#")); do
             shift
         ;;
         --asan)
-            _extra_build_options="${_extra_build_options} -DLLAMA_SANITIZE_ADDRESS=on"
+            _build_options="${_build_options} -DLLAMA_SANITIZE_ADDRESS=on"
             shift
         ;;
         --build-linux-x64)
             _build_platform='linux'
             _build_arch='x86_64'
             # disable the qnn cpu backend, let the test use ggml cpu backend to cross verify the results
-            _extra_build_options="${_extra_build_options} -DLLAMA_SANITIZE_ADDRESS=on"
+            _build_options="${_build_options} -DLLAMA_SANITIZE_ADDRESS=on"
             shift
         ;;
         --perf-log)
@@ -91,8 +92,12 @@ while (("$#")); do
             _enable_dequant=1
             shift
         ;;
-        --use-ggml-hexagon)
-            _use_ggml_hexagon=1
+        --disable-ggml-hexagon)
+            _enable_ggml_hexagon=0
+            shift
+        ;;
+        --enable-ocl)
+            _enable_ocl=1
             shift
         ;;
         *) # preserve positional arguments
@@ -102,12 +107,13 @@ while (("$#")); do
     esac
 done
 
-if [ $_use_ggml_hexagon -eq 1 ]; then
+if [ $_enable_ggml_hexagon -eq 1 ]; then
     export GGML_HEXAGON=1
     export BUILD_HEXAGON_BACKEND=0
     export BUILD_HEXAGON_NPU_ONLY=0
     _build_options="${_build_options} -DGGML_QNN_ENABLE_CPU_BACKEND=off -DGGML_OPENMP=off"
     _disable_hexagon_and_qnn=1
+    _enable_hexagon_backend=0
 else
     _build_options="${_build_options} -DGGML_QNN_ENABLE_CPU_BACKEND=on -DGGML_OPENMP=on"
     if [ $_enable_hexagon_backend -eq 1 ]; then
@@ -124,17 +130,22 @@ else
     fi
 
     if [ $_enable_dequant -eq 1 ]; then
-        _extra_build_options="${_extra_build_options} -DGGML_HEXAGON_ENABLE_QUANTIZED_TENSORS=on"
+        _build_options="${_build_options} -DGGML_HEXAGON_ENABLE_QUANTIZED_TENSORS=on"
     else
-        _extra_build_options="${_extra_build_options} -DGGML_HEXAGON_ENABLE_QUANTIZED_TENSORS=off"
+        _build_options="${_build_options} -DGGML_HEXAGON_ENABLE_QUANTIZED_TENSORS=off"
     fi
 
     if [ $_enable_profiler -eq 1 ]; then
-        _extra_build_options="${_extra_build_options} -DGGML_HEXAGON_ENABLE_PERFORMANCE_TRACKING=on"
+        _build_options="${_build_options} -DGGML_HEXAGON_ENABLE_PERFORMANCE_TRACKING=on"
     fi
     export GGML_HEXAGON=0
 fi
 
+if [ $_enable_ocl -eq 1 ]; then
+    _build_options="${_build_options} -DGGML_OPENCL=ON -DGGML_OPENCL_USE_ADRENO_KERNELS=ON"
+else
+    _build_options="${_build_options} -DGGML_OPENCL=OFF"
+fi
 
 _build_options="${_build_options} ${_extra_build_options}"
 
@@ -169,11 +180,15 @@ echo "output_dir: $_llama_cpp_output_dir"
 echo "build_platform: $_build_platform"
 echo "build_arch: $_build_arch"
 echo "build_type: $_build_type"
+echo "rebuild: $_rebuild"
 echo "disable_hexagon_and_qnn: $_disable_hexagon_and_qnn"
 echo "enable_hexagon_backend: $_enable_hexagon_backend"
 echo "hexagon_npu_only: $_hexagon_npu_only"
 echo "qnn_only: $_qnn_only"
+echo "enable_ggml_hexagon: $_enable_ggml_hexagon"
 echo "enable_profiler: $_enable_profiler"
+echo "enable_dequant: $_enable_dequant"
+echo "enable_ocl: $_enable_ocl"
 echo "------------------------------------------------------------"
 
 _start_time=$(date +%s)
@@ -184,6 +199,7 @@ pushd "$_script_dir"
 export LLAMA_CPP_REPO=$_llama_cpp_repo_dir
 export OUTPUT_PATH=$_llama_cpp_output_dir
 export BUILD_TYPE=$_build_type
+export SHOULD_REBUILD=$_rebuild
 export HOST_USER_ID=$_user_id
 export TARGET_PLATFORM=$_build_platform
 export TARGET_ARCH=$_build_arch
