@@ -46,7 +46,7 @@ jobs:
 
       - name: Package binaries
         run: |
-          7z a -v1950M llama-cpp-qnn-arm64-windows-debug.7z D:/a/llama-cpp-qnn-builder/llama-cpp-qnn-builder/llama.cpp/build-arm64-windows-llvm-release/bin/* -mx=9
+          7z a -v1950M llama-cpp-qnn-arm64-windows-release.7z D:/a/llama-cpp-qnn-builder/llama-cpp-qnn-builder/llama.cpp/build-arm64-windows-llvm-release/bin/* -mx=9
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
