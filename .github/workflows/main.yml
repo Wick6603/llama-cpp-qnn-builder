@@ -1,0 +1,70 @@
+name: Build Release
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-windows-qnn:
+    timeout-minutes: 20
+    runs-on: windows-latest
+    env:
+      QNN_VERSION: 2.39.0.250926
+      QNN_BASE_PATH: 'C:\qnn_sdk'
+      QNN_BUILD_PRESET: arm64-windows-llvm-release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+      - name: Update Submodule
+        run: |
+          git submodule foreach --recursive git fetch
+          git submodule foreach --recursive git reset --hard
+          git submodule update --init --recursive --checkout
+          git submodule update --recursive
+      - name: Install Ninja
+        run: |
+          choco install ninja
+      - name: Cache Qualcomm Ai Engine SDK
+        id: cache-qnn-sdk
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.QNN_BASE_PATH }}
+          key: qnn-${{ env.QNN_VERSION }}-${{ runner.os }}
+      - if: ${{ steps.cache-qnn-sdk.outputs.cache-hit != 'true' }}
+        name: Install Qualcomm Ai Engine SDK
+        id: get-qnn-sdk
+        run: |
+          curl.exe -o $env:RUNNER_TEMP/v${env:QNN_VERSION}.zip -L "https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/${env:QNN_VERSION}/v${env:QNN_VERSION}.zip"
+          7z x $env:RUNNER_TEMP/v${env:QNN_VERSION}.zip -o"${env:QNN_BASE_PATH}"
+      - name: Set up QNN SDK envs
+        run: |
+          Add-Content $env:GITHUB_ENV "QNN_SDK_PATH=${env:QNN_BASE_PATH}/qairt/${env:QNN_VERSION}"
+      - name: Build
+        run: |
+          cd llama.cpp
+          cmake --preset "${env:QNN_BUILD_PRESET}" -DGGML_OPENMP=OFF -DGGML_QNN=ON -DBUILD_SHARED_LIBS=OFF -DLLAMA_CURL=OFF -DGGML_QNN_SDK_PATH="${env:QNN_SDK_PATH}"
+          cmake --build "build-${env:QNN_BUILD_PRESET}" --clean-first -j ${env:NUMBER_OF_PROCESSORS}
+
+      - name: Package binaries
+        shell: pwsh
+        run: |
+          # 定义源路径和压缩包名称
+          $srcPath = "D:/a/llama-cpp-qnn-builder/llama-cpp-qnn-builder/llama.cpp/build-arm64-windows-llvm-release/bin"
+          $destFile = "llama-cpp-arm64-windows-release.7z"
+          
+          # 使用 7z 进行分卷压缩 (每卷 200MB，可根据需要调整 -v200m)
+          # -mx9 表示最大压缩比
+          7z a -t7z -m0=lzma2 -mx9 -v200m "$destFile" "$srcPath/*"
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: llama-cpp-qnn-binaries
+          # 匹配所有分卷文件 (例如 .7z.001, .7z.002)
+          path: llama-cpp-qnn-arm64-windows-release.7z*
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{env.QNN_VERSION}}
+          release_name: ${{env.QNN_VERSION}}
+          files: llama-cpp-qnn-arm64-windows-release.7z*
