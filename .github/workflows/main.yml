@@ -45,15 +45,8 @@ jobs:
           cmake --build "build-${env:QNN_BUILD_PRESET}" --clean-first -j ${env:NUMBER_OF_PROCESSORS}
 
       - name: Package binaries
-        shell: pwsh
         run: |
-          # 定义源路径和压缩包名称
-          $srcPath = "D:/a/llama-cpp-qnn-builder/llama-cpp-qnn-builder/llama.cpp/build-arm64-windows-llvm-release/bin"
-          $destFile = "llama-cpp-arm64-windows-release.7z"
-          
-          # 使用 7z 进行分卷压缩 (每卷 200MB，可根据需要调整 -v200m)
-          # -mx9 表示最大压缩比
-          7z a -t7z -m0=lzma2 -mx9 -v200m "$destFile" "$srcPath/*"
+          7z a -v1950M llama-cpp-qnn-arm64-windows-debug.7z D:/a/llama-cpp-qnn-builder/llama-cpp-qnn-builder/llama.cpp/build-arm64-windows-llvm-release/bin/* -mx=9
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
